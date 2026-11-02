@@ -1,4 +1,4 @@
-# 🎧 Binaural Room
+# 🎧 Binaural Sound Simulator
 
 Put sounds in a 3D space around your head and hear where they are.
 

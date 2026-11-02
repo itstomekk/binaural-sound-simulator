@@ -1,4 +1,4 @@
-# Development notes
+# Binaural Sound Simulator: development notes
 
 ## Layout
 
