@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Binaural Room — place sounds in 3D around your head</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <main class="stage">
+    <div id="view"></div>
+    <div class="toolbar top-left">
+      <div class="group" role="group" aria-label="Tool">
+        <button data-mode="translate" class="active" title="Move speakers (W)">Move <kbd>W</kbd></button>
+        <button data-mode="rotate" title="Aim speakers (E)">Aim <kbd>E</kbd></button>
+      </div>
+      <div class="group" role="group" aria-label="Camera">
+        <button data-view="perspective">3D</button>
+        <button data-view="top">Top</button>
+        <button data-view="side">Side</button>
+        <button data-view="behind">Behind</button>
+      </div>
+      <label class="chk"><input type="checkbox" id="rings" checked> rings</label>
+    </div>
+    <div class="banner">🎧 Use headphones. Drag a speaker, or use the sliders on the right.</div>
+    <div id="loading">Loading sounds…</div>
+    <div id="toast"></div>
+    <div class="dropzone">Drop audio files to add them</div>
+  </main>
+
+  <aside class="panel">
+    <header class="top">
+      <h1>Binaural Room</h1>
+      <span id="audio-state" data-on="0">audio off</span>
+    </header>
+
+    <section class="global">
+      <div class="transport">
+        <button id="play-all" class="primary">▶ Play all</button>
+        <button id="stop-all">■ Stop</button>
+        <button id="add">+ Add speaker</button>
+      </div>
+      <select id="preset" aria-label="Presets"></select>
+      <details>
+        <summary>Sound settings</summary>
+        <label class="row"><span>Master volume</span><input type="range" id="master" min="0" max="1" step="0.01"><b id="master-v"></b></label>
+        <label class="row"><span>Spatial model</span>
+          <select id="model"><option value="HRTF">HRTF (binaural, headphones)</option><option value="equalpower">Equal power (plain stereo pan)</option></select></label>
+        <label class="row"><span>Distance falloff</span><input type="range" id="rolloff" min="0" max="3" step="0.1"><b id="rolloff-v"></b></label>
+        <div class="row"><span></span><label class="chk"><input type="checkbox" id="delay"> travel-time delay (343 m/s)</label></div>
+        <div class="row"><span></span><label class="chk"><input type="checkbox" id="air"> air absorption (far = duller)</label></div>
+        <label class="row"><span>Stagger starts</span><input type="number" id="stagger" min="0" max="2" step="0.05"><b>s</b></label>
+      </details>
+    </section>
+
+    <div id="speakers"></div>
+
+    <footer>
+      <input type="file" id="file" accept="audio/*" multiple hidden>
+      <p>Open space only, no walls or echoes yet. HRTF is a generic head model, so front/back and up/down cues vary between people.</p>
+    </footer>
+  </aside>
+</div>
+<script src="dist/app.js"></script>
+</body>
+</html>

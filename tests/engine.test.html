@@ -1,0 +1,126 @@
+<!doctype html><meta charset="utf-8"><title>engine tests</title><body><pre id="out">running…</pre>
+<script type="module">
+import { SpatialEngine, fromSpherical, toSpherical, SPEED_OF_SOUND } from '../src/engine.js';
+const SR = 48000, DUR = 0.7;
+const results = [];
+const log = (name, ok, detail) => { results.push({ name, ok, detail }); };
+
+function noise(ctx, seconds = DUR + 0.2) {
+  const buf = ctx.createBuffer(1, Math.floor(SR * seconds), SR);
+  const d = buf.getChannelData(0); let s = 12345;
+  for (let i = 0; i < d.length; i++) { s = (s * 1664525 + 1013904223) >>> 0; d[i] = (s / 2 ** 32) * 2 - 1; }
+  return buf;
+}
+async function render(setup, { model = 'HRTF', delay = false, air = false, rolloff = 1 } = {}) {
+  const ctx = new OfflineAudioContext(2, Math.floor(SR * DUR), SR);
+  const eng = new SpatialEngine(ctx, { smoothing: 0 });
+  eng.master.gain.value = 1;
+  eng.setPanningModel(model); eng.setPropagationDelay(delay); eng.setAirAbsorption(air); eng.setRolloff(rolloff);
+  const sp = eng.addSpeaker('a');
+  sp.setBuffer(noise(ctx));
+  setup(sp);
+  sp.play(0);
+  const out = await ctx.startRendering();
+  return { L: out.getChannelData(0), R: out.getChannelData(1), eng, sp };
+}
+const rms = (a, from = 0.15, to = DUR) => { let s = 0, n = 0; for (let i = from * SR | 0; i < to * SR; i++) { s += a[i] * a[i]; n++; } return Math.sqrt(s / n); };
+const db = (x) => 20 * Math.log10(x);
+function onsetSec(a) { const th = 0.01; for (let i = 0; i < a.length; i++) if (Math.abs(a[i]) > th) return i / SR; return NaN; }
+// interaural lag (s): negative => R arrives earlier than L
+function itd(L, R) {
+  let best = -1e9, bestLag = 0; const maxLag = Math.floor(0.0012 * SR);
+  for (let lag = -maxLag; lag <= maxLag; lag++) {
+    let s = 0;
+    for (let i = 0.2 * SR | 0; i < 0.6 * SR; i++) s += L[i] * R[i + lag];
+    if (s > best) { best = s; bestLag = lag; }
+  }
+  return bestLag / SR;
+}
+function fft(re, im) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) { let bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit; if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; } }
+  for (let l = 2; l <= n; l <<= 1) {
+    const ang = -2 * Math.PI / l, wr = Math.cos(ang), wi = Math.sin(ang);
+    for (let i = 0; i < n; i += l) {
+      let cr = 1, ci = 0;
+      for (let j = 0; j < l / 2; j++) {
+        const ur = re[i + j], ui = im[i + j];
+        const vr = re[i + j + l / 2] * cr - im[i + j + l / 2] * ci, vi = re[i + j + l / 2] * ci + im[i + j + l / 2] * cr;
+        re[i + j] = ur + vr; im[i + j] = ui + vi; re[i + j + l / 2] = ur - vr; im[i + j + l / 2] = ui - vi;
+        const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
+      }
+    }
+  }
+}
+function bandDb(a, lo, hi) {
+  const N = 16384, re = new Float64Array(N), im = new Float64Array(N);
+  for (let i = 0; i < N; i++) re[i] = a[8000 + i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / N));
+  fft(re, im);
+  let e = 0; for (let k = Math.floor(lo / SR * N); k < Math.floor(hi / SR * N); k++) e += re[k] ** 2 + im[k] ** 2;
+  return 10 * Math.log10(e);
+}
+const place = (az, el, d) => (sp) => sp.setPosition(...fromSpherical(az, el, d));
+
+(async () => {
+  try {
+    const p = fromSpherical(90, 0, 2), s = toSpherical(...p);
+    log('spherical round trip (right, 2 m)', Math.abs(p[0] - 2) < 1e-9 && Math.abs(s.azimuth - 90) < 1e-6 && Math.abs(s.distance - 2) < 1e-9, JSON.stringify({ p, s }));
+    const f = fromSpherical(0, 0, 3);
+    log('front is -Z', Math.abs(f[2] + 3) < 1e-9, JSON.stringify(f));
+
+    const r = await render(place(90, 0, 2)), l = await render(place(-90, 0, 2));
+    const lr = db(rms(r.R) / rms(r.L));
+    log('source at right: R louder than L', lr > 6, `R-L = ${lr.toFixed(1)} dB`);
+    const lr2 = db(rms(l.L) / rms(l.R));
+    log('source at left: L louder than R', lr2 > 6, `L-R = ${lr2.toFixed(1)} dB`);
+    const itdR = itd(r.L, r.R);
+    log('source at right: right ear leads (ITD -0.9..-0.3 ms)', itdR < -0.0003 && itdR > -0.0009, `R-L lag = ${(itdR * 1000).toFixed(2)} ms`);
+    const fr = await render(place(0, 0, 2));
+    log('source in front: ears balanced (<1.5 dB)', Math.abs(db(rms(fr.L) / rms(fr.R))) < 1.5, `L-R = ${db(rms(fr.L) / rms(fr.R)).toFixed(2)} dB`);
+
+    const bk = await render(place(180, 0, 2));
+    const up = await render(place(0, 60, 2)), dn = await render(place(0, -60, 2));
+    const hi = (x) => bandDb(x.L, 6000, 14000) - bandDb(x.L, 500, 3000);
+    const hiF = hi(fr), hiB = hi(bk);
+    log('HRTF front vs behind differ in high-frequency balance (>2 dB)', Math.abs(hiF - hiB) > 2, `front ${hiF.toFixed(1)} dB, behind ${hiB.toFixed(1)} dB (HF/mid)`);
+    const hiU = hi(up), hiD = hi(dn);
+    log('HRTF above vs below differ in high-frequency balance (>2 dB)', Math.abs(hiU - hiD) > 2, `above ${hiU.toFixed(1)} dB, below ${hiD.toFixed(1)} dB (HF/mid)`);
+    const efr = await render(place(0, 0, 2), { model: 'equalpower' }), ebk = await render(place(180, 0, 2), { model: 'equalpower' });
+    const eh = Math.abs(hi(efr) - hi(ebk));
+    log('control: equal-power cannot tell front from behind (<0.5 dB)', eh < 0.5, `diff ${eh.toFixed(2)} dB`);
+
+    const near = await render(place(0, 0, 1)), far = await render(place(0, 0, 8));
+    const g = db(rms(far.L) / rms(near.L));
+    log('distance 1 m -> 8 m: about -18 dB (inverse law)', Math.abs(g + 18.06) < 1.5, `${g.toFixed(1)} dB`);
+    const n2 = await render(place(0, 0, 1), { delay: true }), f2 = await render(place(0, 0, 18), { delay: true });
+    const dt = onsetSec(f2.L) - onsetSec(n2.L), expect = 17 / SPEED_OF_SOUND;
+    log('propagation delay: 1 m vs 18 m onset differs by 17/343 s', Math.abs(dt - expect) < 0.002, `measured ${(dt * 1000).toFixed(1)} ms, expected ${(expect * 1000).toFixed(1)} ms`);
+    const n3 = await render(place(0, 0, 1), { delay: false }), f3 = await render(place(0, 0, 18), { delay: false });
+    log('propagation delay off: onsets equal', Math.abs(onsetSec(f3.L) - onsetSec(n3.L)) < 0.0015, `${((onsetSec(f3.L) - onsetSec(n3.L)) * 1000).toFixed(2)} ms`);
+    const a0 = await render(place(0, 0, 40), { air: false }), a1 = await render(place(0, 0, 40), { air: true });
+    const airDiff = bandDb(a0.L, 8000, 16000) - bandDb(a1.L, 8000, 16000);
+    log('air absorption lowers highs at 40 m (>3 dB)', airDiff > 3, `${airDiff.toFixed(1)} dB at 8-16 kHz`);
+
+    const toward = await render((sp) => { place(0, 0, 2)(sp); sp.aimAtListener(); sp.setDirectional(true, 60, 200, 0.1); });
+    const away = await render((sp) => { place(0, 0, 2)(sp); sp.setAim(0, 0, -1); sp.setDirectional(true, 60, 200, 0.1); });
+    const dg = db(rms(away.L) / rms(toward.L));
+    log('directional on, aimed away: much quieter than aimed at listener (<-12 dB)', dg < -12, `${dg.toFixed(1)} dB`);
+    const offToward = await render((sp) => { place(0, 0, 2)(sp); sp.aimAtListener(); sp.setDirectional(false); });
+    const offAway = await render((sp) => { place(0, 0, 2)(sp); sp.setAim(0, 0, -1); sp.setDirectional(false); });
+    const dOff = db(rms(offAway.L) / rms(offToward.L));
+    log('directional off: aim has no effect (<0.3 dB)', Math.abs(dOff) < 0.3, `${dOff.toFixed(2)} dB`);
+    const dOn = db(rms(toward.L) / rms(offToward.L));
+    log('directional on, aimed at listener = same level as omni (<0.5 dB)', Math.abs(dOn) < 0.5, `${dOn.toFixed(2)} dB`);
+
+    const sp = r.sp;
+    sp.setPosition(0, 0, 0);
+    log('speaker cannot sit inside head', sp.info.distance >= 0.249, `distance ${sp.info.distance}`);
+    sp.setPosition(0, 0, -2); sp.setAim(0, 0, 1);
+    log('info: off-axis 0 when aimed at listener', sp.info.offAxis < 0.01, `${sp.info.offAxis}`);
+    sp.setAim(0, 0, -1);
+    log('info: off-axis 180 when facing away', Math.abs(sp.info.offAxis - 180) < 0.01, `${sp.info.offAxis}`);
+  } catch (e) { log('exception', false, String((e && e.stack) || e)); }
+  window.__results = results; window.__done = true;
+  document.getElementById('out').textContent = results.map(r => (r.ok ? 'PASS ' : 'FAIL ') + r.name + ' — ' + r.detail).join('\n');
+})();
+</script>
