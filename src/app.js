@@ -221,7 +221,10 @@ class App {
     };
     bind('#master', 'master', Number); bind('#model', 'model'); bind('#delay', 'delay'); bind('#air', 'air');
     bind('#rolloff', 'rolloff', Number); bind('#stagger', 'stagger', (v) => Math.max(0, Number(v) || 0), 'input'); bind('#rings', 'rings');
-    for (const b of document.querySelectorAll('[data-view]')) b.onclick = () => this.view.setView(b.dataset.view);
+    for (const b of document.querySelectorAll('[data-view]')) b.onclick = () => {
+      this.view.setView(b.dataset.view);
+      for (const o of document.querySelectorAll('[data-view]')) o.classList.toggle('active', o === b);
+    };
     for (const b of document.querySelectorAll('[data-mode]')) b.onclick = () => this.setMode(b.dataset.mode);
     window.addEventListener('keydown', (e) => {
       if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName) && document.activeElement.type !== 'range' && document.activeElement.type !== 'checkbox') return;

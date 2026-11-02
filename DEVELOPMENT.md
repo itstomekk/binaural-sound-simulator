@@ -21,6 +21,10 @@ C:\Python314\python.exe tests\ui_test.py    # UI test, screenshots in tests/out/
 C:\Python314\python.exe tools\gen_voices.ps1 # see below
 ```
 
+Screenshots for the README: `python tools/screenshots.py` (writes `docs/screenshots/`).
+
+Deploy: GitHub Pages serves the repo root from `main`, so commit the rebuilt `dist/app.js` with every change to `src/`.
+
 Voices: `powershell -File tools/gen_voices.ps1`, then `python tools/build_voices.py` (needs ffmpeg).
 
 ## Audio engine

@@ -208,10 +208,12 @@ export class RoomView {
     if (key === e.coneKey) return;
     e.coneKey = key;
     while (e.cones.children.length) { const c = e.cones.children[0]; c.geometry.dispose(); c.material.dispose(); e.cones.remove(c); }
-    const L = 2.2;
+    const R_MAX = 1.5, L_MAX = 2.2; // keep the drawn cone small even for very wide angles
     const mk = (fullAngle, color, opacity) => {
-      const half = (Math.min(fullAngle / 2, 85) * Math.PI) / 180;
-      const geo = new THREE.ConeGeometry(Math.tan(half) * L, L, 40, 1, true);
+      const half = (Math.min(fullAngle / 2, 89) * Math.PI) / 180;
+      const L = Math.max(0.12, Math.min(L_MAX, R_MAX / Math.tan(half)));
+      const R = Math.min(R_MAX, Math.tan(half) * L);
+      const geo = new THREE.ConeGeometry(R, L, 40, 1, true);
       geo.translate(0, -L / 2, 0); geo.rotateX(Math.PI / 2); // apex at origin, opening toward -Z
       const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false }));
       m.position.z = -0.15;
@@ -273,7 +275,10 @@ export class RoomView {
       behind: [[0, 1.4, 9], [0, 0, 0]],
     };
     const v = views[name] || views.perspective;
-    this.camera.position.set(...v[0]);
+    // zoom out so the farthest speaker stays in frame
+    let far = 0; for (const e of this.speakers.values()) far = Math.max(far, e.group.position.length());
+    const k = Math.max(1, far / 8.8);
+    this.camera.position.set(v[0][0] * k, v[0][1] * k, v[0][2] * k);
     this.orbit.target.set(...v[1]);
     this.orbit.update();
   }
